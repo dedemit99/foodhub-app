@@ -5,30 +5,67 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-//* Fungsi Middleware
-func loggerMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+//* Global variable untuk koneksi ke database
+var DB *gorm.DB
 
-		//* Menjalankan handler pertama yang dituju
-		next(w, r)
+//* Membuat custom Middleware logger (Gin)
+func GinLogger() gin.HandlerFunc {
+	return func(c *gin.Context)  {
+		t := time.Now()
 
-		//* Setelah handler selesai, cetak log-nya ke terminal
-		log.Printf("[%s] %s %s took %s", r.RemoteAddr, r.Method, r.URL.Path, time.Since(start))
+		//* Proses request (melanjutkan ke handler utama)
+		c.Next()
+
+		//* Setelah handler selesai hitung waktu eksekusi
+		latency := time.Since(t)
+		status := c.Writer.Status()
+
+		log.Printf("[FoodHub-log] %s %s %s %s", c.Request.Method, status, c.Request.URL.Path, latency)
 	}
 }
 
-func handleHome(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Selamat datang di API FoodHub Marketplace!")
+
+//* Fungsi Untuk Koneksi ke Database
+func initDB() {
+	//* sesuai dengan data yang sudah di buat di postgresql
+	dsn := "host=localhost user=foodhub_user password=foodhub123 dbname=foodhub_db port=5432 sslmode=disable TimeZone=Asia/Jakarta"
+
+	var err error
+
+	//* Membukan koneksi menggunakan GORM
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Gagal koneksi ke database")
+	}
+
+	fmt.Println("Berhasil terkoneksi ke database PostgreSQL")
 }
 
 func main() {
-	//* Membungkus handleHome dengan loggerMiddleware
-	http.HandleFunc("/", loggerMiddleware(handleHome))
+	//* Inisialisasi Databse
+	initDB()
 
-	//* Menjalankan server di port 8080
-	fmt.Print("Server bacekend berjalan di http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	//* Inisialisasi Router Gin
+	r := gin.New()
+
+	//* Memasang middleware Global
+	r.Use(GinLogger())
+	r.Use(gin.Recovery()) //* Mencegah server crash jika terjadi panic
+
+	//* Route utama (endpoint API)
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"message": "Selamat datang di API foodhub marketplace dengan Gin Gonic!",
+		})
+	})
+
+	//* Menjalankan server di port :8080
+	r.Run(":8080")
 }
